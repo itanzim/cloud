@@ -2,38 +2,99 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>MyCloud</title>
+  <title>MyCloud Photos</title>
   <style>
-    body { font-family: Arial; padding: 20px; background: #f2f2f2; }
-    h1 { color: #333; }
-    input[type="file"] { margin-bottom: 10px; }
-    .file-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-    .file-item { background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px #0001; }
-    .file-item a { text-decoration: none; color: #007bff; }
-    #status { margin: 10px 0; }
+    body {
+      font-family: sans-serif;
+      background: #f8f9fa;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #333;
+    }
+
+    #uploadBar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    input[type="file"] {
+      padding: 5px;
+    }
+
+    button {
+      padding: 8px 15px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+    #gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 15px;
+    }
+
+    .photo {
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px #0002;
+      text-align: center;
+    }
+
+    .photo img {
+      max-width: 100%;
+      max-height: 120px;
+      border-radius: 6px;
+      margin-bottom: 5px;
+    }
+
+    .photo a {
+      display: block;
+      color: #007bff;
+      word-break: break-all;
+      font-size: 0.85rem;
+    }
+
+    #status {
+      text-align: center;
+      margin-bottom: 15px;
+      color: green;
+    }
   </style>
 </head>
 <body>
-  <h1>📂 MyCloud</h1>
+  <h1>📷 MyCloud Photos</h1>
 
-  <input type="file" id="fileInput" />
-  <button onclick="uploadFile()">⬆️ Upload</button>
-  <button onclick="loadFiles()">🔄 Refresh</button>
+  <div id="uploadBar">
+    <input type="file" id="fileInput" />
+    <button onclick="uploadFile()">Upload</button>
+    <button onclick="loadGallery()">Refresh</button>
+  </div>
+
   <p id="status"></p>
 
-  <div class="file-grid" id="fileGrid"></div>
+  <div id="gallery"></div>
 
   <script>
-    // Replace with your actual bot token and channel ID
-    const BOT_TOKEN = '7940804849:AAFpqkamFGbj1hWMOZmrGXDSarJ0yi54DgQ';
+    const BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE';
     const CHANNEL_ID = '-1002837205535';
 
     async function uploadFile() {
-      const fileInput = document.getElementById('fileInput');
+      const fileInput = document.getElementById("fileInput");
       const file = fileInput.files[0];
-      if (!file) return alert("Please select a file");
+      if (!file) return alert("Please choose a file.");
 
-      document.getElementById("status").textContent = "⏳ Uploading...";
+      document.getElementById("status").textContent = "Uploading...";
 
       const formData = new FormData();
       formData.append("chat_id", CHANNEL_ID);
@@ -47,43 +108,58 @@
       const result = await res.json();
       if (result.ok) {
         document.getElementById("status").textContent = "✅ Uploaded!";
+        loadGallery();
         fileInput.value = "";
-        loadFiles();
       } else {
         document.getElementById("status").textContent = "❌ Upload failed: " + result.description;
       }
     }
 
-    async function loadFiles() {
-      document.getElementById("status").textContent = "🔄 Loading...";
-      const updates = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates`).then(r => r.json());
+    async function loadGallery() {
+      document.getElementById("status").textContent = "Loading...";
 
-      const messages = updates.result
-        .map(update => update.message)
-        .filter(msg => msg && msg.document)
-        .reverse();
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates`);
+      const data = await res.json();
+      const messages = data.result.map(u => u.message).filter(m => m?.document || m?.photo).reverse();
 
-      const grid = document.getElementById("fileGrid");
-      grid.innerHTML = "";
+      const gallery = document.getElementById("gallery");
+      gallery.innerHTML = "";
 
       for (const msg of messages) {
-        const file_id = msg.document.file_id;
-        const file_name = msg.document.file_name;
+        let fileId, fileName;
 
-        const fileInfo = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${file_id}`).then(r => r.json());
+        if (msg.document) {
+          fileId = msg.document.file_id;
+          fileName = msg.document.file_name;
+        } else if (msg.photo) {
+          const largest = msg.photo[msg.photo.length - 1];
+          fileId = largest.file_id;
+          fileName = "photo.jpg";
+        } else {
+          continue;
+        }
+
+        const fileRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${fileId}`);
+        const fileInfo = await fileRes.json();
         const filePath = fileInfo.result.file_path;
         const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
 
         const div = document.createElement("div");
-        div.className = "file-item";
-        div.innerHTML = `<a href="${fileUrl}" target="_blank" download>${file_name}</a>`;
-        grid.appendChild(div);
+        div.className = "photo";
+
+        if (fileName.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+          div.innerHTML = `<img src="${fileUrl}" alt="${fileName}"><a href="${fileUrl}" download>${fileName}</a>`;
+        } else {
+          div.innerHTML = `<a href="${fileUrl}" target="_blank">📄 ${fileName}</a>`;
+        }
+
+        gallery.appendChild(div);
       }
 
-      document.getElementById("status").textContent = "✅ Loaded!";
+      document.getElementById("status").textContent = "✅ Loaded";
     }
 
-    window.onload = loadFiles;
+    window.onload = loadGallery;
   </script>
 </body>
 </html>
