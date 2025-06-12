@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My Personal Cloud</title>
+</head>
+<body>
+  <h1>Upload File to My Cloud</h1>
+  <input type="text" id="fileUrl" placeholder="Direct file URL" />
+  <input type="text" id="fileName" placeholder="File name (optional)" />
+  <button onclick="upload()">Upload</button>
+  <p id="result"></p>
+
+  <script>
+    async function upload() {
+      const fileUrl = document.getElementById('fileUrl').value;
+      const fileName = document.getElementById('fileName').value || "file.bin";
+      const res = await fetch('/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileUrl, fileName })
+      });
+      const data = await res.json();
+      document.getElementById('result').textContent = res.ok
+        ? '✅ Uploaded to Telegram!'
+        : '❌ Failed: ' + JSON.stringify(data);
+    }
+  </script>
+</body>
+</html>
