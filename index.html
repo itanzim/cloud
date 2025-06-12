@@ -1,37 +1,94 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>CyCloud – Upload to Telegram</title>
+  <meta charset="UTF-8">
+  <title>CyCloud - Personal Drive</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .item { width: 150px; text-align: center; }
+    img, video { width: 100%; border-radius: 6px; }
+  </style>
 </head>
 <body>
-  <h2>Upload File to Telegram Storage</h2>
-  <input type="file" id="fileInput" />
+
+  <h2>📁 CyCloud - Personal Cloud</h2>
+  <input type="file" id="fileInput">
   <button onclick="uploadFile()">Upload</button>
+  <button onclick="loadFiles()">🔁 Refresh Files</button>
+
   <p id="status"></p>
+  <div class="grid" id="fileGrid"></div>
 
   <script>
+    const BOT_TOKEN = '7940804849:AAFpqkamFGbj1hWMOZmrGXDSarJ0yi54DgQ';
+    const CHANNEL_ID = '-1002837205535'; // Your Telegram Channel ID
+
     async function uploadFile() {
-      const input = document.getElementById("fileInput");
-      const file = input.files[0];
-      if (!file) return alert("Please select a file");
+      const file = document.getElementById('fileInput').files[0];
+      if (!file) return alert("Select a file first.");
+      document.getElementById('status').textContent = "Uploading...";
 
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("chat_id", CHANNEL_ID);
+      formData.append("document", file);
+      formData.append("caption", file.name);
 
-      document.getElementById("status").innerText = "Uploading...";
-
-      const res = await fetch("/upload", {
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
         method: "POST",
         body: formData
       });
 
-      const result = await res.json();
-      if (res.ok) {
-        document.getElementById("status").innerHTML = `✅ Uploaded: <a href="${result.url}" target="_blank">View</a>`;
+      const json = await res.json();
+      if (json.ok) {
+        document.getElementById('status').textContent = "✅ Uploaded!";
+        loadFiles();
       } else {
-        document.getElementById("status").innerText = "❌ Upload failed: " + result.error;
+        document.getElementById('status').textContent = "❌ Upload failed.";
+        console.error(json);
       }
     }
+
+    async function loadFiles() {
+      document.getElementById('status').textContent = "🔄 Loading...";
+      const updates = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates`).then(res => res.json());
+
+      const messages = updates.result
+        .map(update => update.message)
+        .filter(msg => msg && msg.document && msg.chat.id == CHANNEL_ID)
+        .reverse();
+
+      const grid = document.getElementById('fileGrid');
+      grid.innerHTML = "";
+
+      for (const msg of messages) {
+        const file_id = msg.document.file_id;
+        const file_name = msg.document.file_name;
+
+        // Get File Path
+        const fileInfo = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${file_id}`).then(res => res.json());
+        const filePath = fileInfo.result.file_path;
+        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+
+        const ext = file_name.split('.').pop().toLowerCase();
+        const div = document.createElement("div");
+        div.className = "item";
+
+        if (["jpg", "jpeg", "png", "gif"].includes(ext)) {
+          div.innerHTML = `<img src="${fileUrl}" alt="${file_name}"><p>${file_name}</p>`;
+        } else if (["mp4", "webm"].includes(ext)) {
+          div.innerHTML = `<video controls src="${fileUrl}"></video><p>${file_name}</p>`;
+        } else {
+          div.innerHTML = `<a href="${fileUrl}" target="_blank">${file_name}</a>`;
+        }
+
+        grid.appendChild(div);
+      }
+
+      document.getElementById('status').textContent = "✅ Done.";
+    }
+
+    loadFiles(); // Auto-load on start
   </script>
 </body>
 </html>
