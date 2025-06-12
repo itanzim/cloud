@@ -539,11 +539,13 @@ selectionCircle.innerHTML = '<i class="fas fa-check"></i>';
 photoInner.appendChild(selectionCircle);
 
 if (isImage) {
-const img = document.createElement('img');
-img.src = `${API_BASE_URL}/stream/${file.id}`;
-img.alt = file.name;
-img.loading = "lazy";
-photoInner.appendChild(img);
+  const img = document.createElement('img');
+  // use the thumb if available, otherwise fall back to full file
+  const previewId = file.thumbnail_id || file.id;
+  img.src = `${API_BASE_URL}/stream/${previewId}`;
+  img.alt = file.name;
+  img.loading = "lazy";
+  photoInner.appendChild(img);
 } else if (isVideo) {
 const img = document.createElement('img');
 // Use a video thumbnail or placeholder
