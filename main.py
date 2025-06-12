@@ -1,6 +1,5 @@
 from fastapi import FastAPI, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.types import DocumentAttributeFilename
@@ -16,13 +15,6 @@ channel_id = -1002837205535  # Replace with your own channel ID
 # Init
 client = TelegramClient(StringSession(string), api_id, api_hash)
 app = FastAPI()
-
-# Static UI
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.get("/")
-async def root():
-    return FileResponse("static/index.html")
 
 @app.on_event("startup")
 async def startup_event():
