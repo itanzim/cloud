@@ -12,16 +12,16 @@ from PIL import Image
 # Telegram credentials
 api_id = 28437242
 api_hash = "25ff44a57d1be2775b5fb60278ef724b"
-string = os.environ.get("STRING_SESSION")
+string = os.environ.get("STRING_SESSION")  # should be set in Render env
 channel_id = -1002837205535
 
 client = TelegramClient(StringSession(string), api_id, api_hash)
 app = FastAPI()
 
-# ✅ Add CORS Middleware to allow frontend access
+# ✅ CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ⚠️ Use specific domains in production
+    allow_origins=["*"],  # Use specific domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,11 +30,12 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     await client.start()
-    print("Telegram client started")
+    print("✅ Telegram client started")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     await client.disconnect()
+    print("🔌 Telegram client disconnected")
 
 @app.post("/upload")
 async def upload(file: UploadFile):
@@ -55,7 +56,7 @@ async def upload(file: UploadFile):
             msg_thumb = await client.send_file(channel_id, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}")
             thumb_id = msg_thumb.id
         except Exception as e:
-            print("Thumbnail generation failed:", e)
+            print("⚠️ Thumbnail generation failed:", e)
 
     msg = await client.send_file(channel_id, bio, file_name=name, caption=name)
     return {"status": "uploaded", "id": msg.id, "thumbnail_id": thumb_id}
@@ -81,7 +82,7 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
                 msg_thumb = await client.send_file(channel_id, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}")
                 thumb_id = msg_thumb.id
             except Exception as e:
-                print("Thumbnail generation failed for", name, ":", e)
+                print(f"⚠️ Thumbnail generation failed for {name}:", e)
 
         msg = await client.send_file(channel_id, bio, file_name=name, caption=name)
         results.append({"id": msg.id, "thumbnail_id": thumb_id, "name": name})
@@ -90,6 +91,10 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
 
 @app.get("/files")
 async def list_files():
+    # ✅ ensure connection in cold-started containers (like Render)
+    if not client.is_connected():
+        await client.connect()
+
     messages = await client.get_messages(channel_id, limit=100)
     files = []
     thumb_map = {}
