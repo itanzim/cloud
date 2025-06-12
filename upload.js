@@ -1,42 +1,55 @@
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
+import busboy from "busboy";
+import fetch from "node-fetch";
+import { Readable } from "stream";
+
+const BOT_TOKEN = "7940804849:AAFpqkamFGbj1hWMOZmrGXDSarJ0yi54DgQ";
+const CHANNEL_ID = "-1002837205535"; // must be negative for channels
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).send('Only POST allowed');
+  if (req.method !== "POST") return res.status(405).json({ error: "Only POST allowed" });
 
-  const { fileUrl, fileName } = req.body;
+  const bb = busboy({ headers: req.headers });
+  let fileBuffer = Buffer.alloc(0);
+  let fileName = "upload";
 
-  const BOT_TOKEN = process.env.BOT_TOKEN;
-  const CHANNEL_ID = process.env.CHANNEL_ID;
-
-  try {
-    const fileRes = await fetch(fileUrl);
-    const fileBuffer = await fileRes.arrayBuffer();
-
-    const boundary = '----CloudUploaderBoundary' + Math.random().toString(16).slice(2);
-    const parts = [];
-
-    const push = (text) => parts.push(Buffer.from(text));
-    push(`--${boundary}\r\n`);
-    push(`Content-Disposition: form-data; name="chat_id"\r\n\r\n`);
-    push(`${CHANNEL_ID}\r\n`);
-    push(`--${boundary}\r\n`);
-    push(`Content-Disposition: form-data; name="caption"\r\n\r\n`);
-    push(`${fileName}\r\n`);
-    push(`--${boundary}\r\n`);
-    push(`Content-Disposition: form-data; name="document"; filename="${fileName}"\r\n`);
-    push(`Content-Type: application/octet-stream\r\n\r\n`);
-    parts.push(Buffer.from(fileBuffer));
-    push(`\r\n--${boundary}--\r\n`);
-
-    const tgRes = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      },
-      body: Buffer.concat(parts),
+  bb.on("file", (_, file, info) => {
+    fileName = info.filename;
+    file.on("data", (data) => {
+      fileBuffer = Buffer.concat([fileBuffer, data]);
     });
+  });
 
-    const tgJson = await tgRes.json();
-    res.status(200).json(tgJson);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  bb.on("finish", async () => {
+    try {
+      const telegramURL = `https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`;
+
+      const formData = new FormData();
+      formData.append("chat_id", CHANNEL_ID);
+      formData.append("caption", fileName);
+      formData.append("document", new Blob([fileBuffer]), fileName);
+
+      const response = await fetch(telegramURL, {
+        method: "POST",
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (result.ok) {
+        const fileId = result.result.document.file_id;
+        res.status(200).json({ success: true, url: `https://t.me/c/${CHANNEL_ID.slice(4)}/${result.result.message_id}` });
+      } else {
+        res.status(500).json({ error: "Telegram error", details: result });
+      }
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  req.pipe(bb);
 }
