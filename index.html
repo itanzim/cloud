@@ -1,154 +1,1065 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Telegram Media Gallery</title>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Include Tailwind CSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Telegram Photos</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500&display=swap');
+
+body {
+font-family: 'Roboto', sans-serif;
+background-color: #f8f9fa;
+color: #202124;
+}
+
+.google-sans {
+font-family: 'Google Sans', sans-serif;
+}
+
+.header-shadow {
+box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+}
+
+.photo-grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+grid-gap: 8px;
+}
+
+.photo-item {
+position: relative;
+overflow: hidden;
+border-radius: 8px;
+cursor: pointer;
+transition: transform 0.2s;
+}
+
+.photo-item:hover {
+transform: scale(1.02);
+}
+
+.photo-item img, .photo-item video {
+width: 100%;
+height: 100%;
+object-fit: cover;
+}
+
+.photo-item.selected {
+outline: 3px solid #1a73e8;
+}
+
+.selection-circle {
+position: absolute;
+top: 8px;
+left: 8px;
+width: 24px;
+height: 24px;
+border-radius: 50%;
+border: 2px solid white;
+background-color: rgba(0, 0, 0, 0.4);
+display: flex;
+align-items: center;
+justify-content: center;
+z-index: 10;
+}
+
+.selected .selection-circle {
+background-color: #1a73e8;
+border-color: #1a73e8;
+}
+
+.selection-circle i {
+color: white;
+font-size: 12px;
+display: none;
+}
+
+.selected .selection-circle i {
+display: block;
+}
+
+.video-indicator {
+position: absolute;
+bottom: 8px;
+right: 8px;
+background-color: rgba(0, 0, 0, 0.6);
+color: white;
+padding: 2px 6px;
+border-radius: 4px;
+font-size: 12px;
+}
+
+.search-bar {
+background-color: #f1f3f4;
+border-radius: 8px;
+transition: background-color 0.2s;
+}
+
+.search-bar:focus-within {
+background-color: white;
+box-shadow: 0 1px 2px 0 rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+}
+
+.search-bar input {
+background-color: transparent;
+}
+
+.btn-primary {
+background-color: #1a73e8;
+color: white;
+border-radius: 4px;
+font-family: 'Google Sans', sans-serif;
+font-weight: 500;
+transition: background-color 0.2s;
+}
+
+.btn-primary:hover {
+background-color: #1765cc;
+}
+
+.btn-secondary {
+color: #1a73e8;
+border-radius: 4px;
+font-family: 'Google Sans', sans-serif;
+font-weight: 500;
+transition: background-color 0.2s;
+}
+
+.btn-secondary:hover {
+background-color: rgba(26, 115, 232, 0.04);
+}
+
+.modal {
+background-color: rgba(0, 0, 0, 0.6);
+backdrop-filter: blur(5px);
+}
+
+.modal-content {
+border-radius: 8px;
+overflow: hidden;
+}
+
+.loading-spinner {
+border: 3px solid rgba(0, 0, 0, 0.1);
+border-top-color: #1a73e8;
+border-radius: 50%;
+width: 24px;
+height: 24px;
+animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+to { transform: rotate(360deg); }
+}
+
+.toast {
+animation: toast-in 0.3s, toast-out 0.3s 2.7s forwards;
+}
+
+@keyframes toast-in {
+from { transform: translateY(100%); opacity: 0; }
+to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes toast-out {
+from { transform: translateY(0); opacity: 1; }
+to { transform: translateY(100%); opacity: 0; }
+}
+
+.date-header {
+position: sticky;
+top: 64px;
+background-color: #f8f9fa;
+z-index: 10;
+padding: 8px 0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+width: 8px;
+height: 8px;
+}
+
+::-webkit-scrollbar-track {
+background: #f1f3f4;
+}
+
+::-webkit-scrollbar-thumb {
+background: #dadce0;
+border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+background: #bdc1c6;
+}
+
+/* Masonry layout for photos */
+.masonry-grid {
+column-count: 4;
+column-gap: 8px;
+}
+
+@media (max-width: 1200px) {
+.masonry-grid {
+column-count: 3;
+}
+}
+
+@media (max-width: 768px) {
+.masonry-grid {
+column-count: 2;
+}
+}
+
+@media (max-width: 480px) {
+.masonry-grid {
+column-count: 1;
+}
+}
+
+.masonry-item {
+break-inside: avoid;
+margin-bottom: 8px;
+}
+</style>
 </head>
-<body class="bg-gray-100">
-<div class="container mx-auto p-4">
-  <h1 class="text-2xl font-bold mb-4">Telegram Media Gallery</h1>
-  <div class="mb-4 flex flex-wrap gap-2">
-    <input type="file" id="fileInput" multiple class="border border-gray-300 p-2 rounded" />
-    <button id="uploadButton" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Upload Files</button>
-    <button id="deleteButton" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Delete Selected</button>
-  </div>
-  <div id="mediaContainer" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-    <!-- Media thumbnails will be inserted here -->
-  </div>
+<body>
+<!-- Header -->
+<header class="fixed top-0 left-0 right-0 bg-white header-shadow z-20">
+<div class="container mx-auto px-4">
+<div class="flex items-center justify-between h-16">
+<!-- Logo and Title -->
+<div class="flex items-center">
+<div class="flex items-center mr-4">
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="#1a73e8">
+<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1.41 15.06l-4.24-4.24 1.41-1.41 2.83 2.83 6.59-6.59 1.41 1.41-8 8z"/>
+</svg>
+<h1 class="ml-2 text-xl font-medium google-sans">Telegram Photos</h1>
 </div>
 
-<!-- Hidden dummy elements to ensure Tailwind includes necessary classes -->
-<div style="display:none;">
-  <div class="relative border rounded overflow-hidden"></div>
-  <label class="absolute top-2 left-2 z-10 bg-white bg-opacity-75 p-1 rounded"></label>
-  <div class="w-full aspect-square"></div>
-  <img class="object-cover w-full h-full" />
-  <input class="w-5 h-5" type="checkbox" />
+<!-- Search Bar -->
+<div class="hidden md:flex items-center search-bar px-4 py-2 flex-grow max-w-xl">
+<i class="fas fa-search text-gray-500 mr-3"></i>
+<input type="text" id="searchInput" placeholder="Search your photos" class="w-full focus:outline-none">
 </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="flex items-center">
+<button id="uploadBtn" class="btn-primary px-4 py-2 flex items-center">
+<i class="fas fa-plus mr-2"></i>
+<span>Upload</span>
+</button>
+
+<button id="refreshBtn" class="btn-secondary ml-2 p-2 rounded-full">
+<i class="fas fa-sync-alt"></i>
+</button>
+</div>
+</div>
+</div>
+</header>
+
+<!-- Mobile Search (visible on small screens) -->
+<div class="md:hidden fixed top-16 left-0 right-0 bg-white z-10 px-4 py-2">
+<div class="search-bar px-4 py-2 flex items-center">
+<i class="fas fa-search text-gray-500 mr-3"></i>
+<input type="text" id="mobileSearchInput" placeholder="Search your photos" class="w-full focus:outline-none">
+</div>
+</div>
+
+<!-- Main Content -->
+<main class="container mx-auto px-4 pt-24 md:pt-20 pb-16">
+<!-- Stats Summary -->
+<div class="mb-6 flex flex-wrap">
+<div class="mr-6 mb-2">
+<span class="text-sm text-gray-500">Total files</span>
+<h2 class="text-2xl font-medium google-sans" id="totalFiles">0</h2>
+</div>
+<div class="mr-6 mb-2">
+<span class="text-sm text-gray-500">Images</span>
+<h2 class="text-2xl font-medium google-sans" id="totalImages">0</h2>
+</div>
+<div class="mb-2">
+<span class="text-sm text-gray-500">Videos</span>
+<h2 class="text-2xl font-medium google-sans" id="totalVideos">0</h2>
+</div>
+</div>
+
+<!-- Selection Actions (hidden by default) -->
+<div id="selectionActions" class="hidden fixed bottom-0 left-0 right-0 bg-white header-shadow z-20 py-3 px-4">
+<div class="container mx-auto flex justify-between items-center">
+<div class="flex items-center">
+<button id="cancelSelection" class="mr-4">
+<i class="fas fa-times"></i>
+</button>
+<span id="selectedCount" class="google-sans">0 selected</span>
+</div>
+<div class="flex items-center">
+<button id="downloadSelected" class="btn-secondary px-4 py-2 mr-2">
+<i class="fas fa-download mr-1"></i> Download
+</button>
+<button id="deleteSelected" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md google-sans font-medium">
+<i class="fas fa-trash-alt mr-1"></i> Delete
+</button>
+</div>
+</div>
+</div>
+
+<!-- Empty State -->
+<div id="emptyState" class="hidden text-center py-16">
+<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMjgiIGhlaWdodD0iMTI4IiB2aWV3Qm94PSIwIDAgNDggNDgiIGZpbGw9IiM1ZjYzNjgiPjxwYXRoIGQ9Ik0zOCAxMmgtMnYtMmMwLTEuMS0uOS0yLTItMmgtOGwtMi44Mi0yLjgyQTIgMiAwIDAgMCAyMS44MyA0aC03LjY2QTIgMiAwIDAgMCAxMiA1LjE4TDkuMTggOEg4Yy0xLjEgMC0yIC45LTIgMnYyNGMwIDEuMS45IDIgMiAyaDMwYzEuMSAwIDItLjkgMi0yVjE0YzAtMS4xLS45LTItMi0yem0tMiAyNEgxMlYxMGg4LjE4bDIuODItMi44MkEyIDIgMCAwIDEgMjQuMTcgNmg3LjY2QTIgMiAwIDAgMSAzNCA3LjE4TDM2LjgyIDEwSDM4djI2ek0yNCAyMGMtMy4zMSAwLTYgMi42OS02IDZzMi42OSA2IDYgNiA2LTIuNjkgNi02LTIuNjktNi02LTZ6bTAgMTBjLTIuMjEgMC00LTEuNzktNC00czEuNzktNCA0LTQgNCAxLjc5IDQgNC0xLjc5IDQtNCA0eiIvPjwvc3ZnPg==" alt="No photos" class="mx-auto mb-4" width="128" height="128">
+<h3 class="text-xl font-medium google-sans mb-2">No photos yet</h3>
+<p class="text-gray-600 mb-6">Upload photos and videos to see them here</p>
+<button id="emptyStateUploadBtn" class="btn-primary px-6 py-2">Upload</button>
+</div>
+
+<!-- Photos Grid -->
+<div id="photosContainer" class="masonry-grid">
+<!-- Photos will be populated here -->
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 200px;"></div>
+</div>
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 280px;"></div>
+</div>
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 240px;"></div>
+</div>
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 180px;"></div>
+</div>
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 220px;"></div>
+</div>
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 260px;"></div>
+</div>
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 200px;"></div>
+</div>
+<div class="masonry-item animate-pulse">
+<div class="bg-gray-200 rounded-lg" style="height: 240px;"></div>
+</div>
+</div>
+</main>
+
+<!-- Upload Modal -->
+<div id="uploadModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
+<div class="modal-content bg-white w-full max-w-md mx-4">
+<div class="flex items-center justify-between p-4 border-b">
+<h3 class="text-lg font-medium google-sans">Upload photos</h3>
+<button id="closeUploadModal" class="text-gray-500 hover:text-gray-700">
+<i class="fas fa-times"></i>
+</button>
+</div>
+<div class="p-6">
+<div id="uploadDropArea" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6 hover:border-blue-500 transition-colors">
+<div class="mb-4">
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="#1a73e8" class="mx-auto">
+<path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+</svg>
+</div>
+<p class="text-gray-700 mb-2">Drag photos and videos here</p>
+<p class="text-gray-500 text-sm mb-4">or</p>
+<label class="btn-primary px-6 py-2 cursor-pointer inline-block">
+Select from computer
+<input type="file" id="fileInput" multiple accept="image/*,video/*" class="hidden">
+</label>
+</div>
+
+<div id="uploadPreview" class="hidden">
+<h4 class="text-sm font-medium text-gray-700 mb-2">Selected files</h4>
+<div id="fileList" class="max-h-48 overflow-y-auto mb-4 border border-gray-200 rounded-lg">
+<!-- Selected files will appear here -->
+</div>
+</div>
+
+<div class="flex justify-end">
+<button id="cancelUpload" class="btn-secondary px-4 py-2 mr-2">Cancel</button>
+<button id="submitUpload" class="btn-primary px-6 py-2">Upload</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Photo Viewer Modal -->
+<div id="photoViewerModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
+<div class="absolute top-0 left-0 right-0 flex justify-between items-center p-4 text-white">
+<button id="closePhotoViewer" class="hover:bg-black hover:bg-opacity-20 p-2 rounded-full">
+<i class="fas fa-arrow-left text-xl"></i>
+</button>
+<div class="flex items-center">
+<button id="downloadCurrentPhoto" class="hover:bg-black hover:bg-opacity-20 p-2 rounded-full mr-2">
+<i class="fas fa-download"></i>
+</button>
+<button id="deleteCurrentPhoto" class="hover:bg-black hover:bg-opacity-20 p-2 rounded-full">
+<i class="fas fa-trash-alt"></i>
+</button>
+</div>
+</div>
+
+<div id="photoViewerContent" class="w-full h-full flex items-center justify-center">
+<!-- Photo/video will be displayed here -->
+</div>
+
+<div class="absolute bottom-0 left-0 right-0 p-4 text-white bg-gradient-to-t from-black from-opacity-50 to-transparent">
+<h3 id="photoViewerFileName" class="text-lg font-medium truncate"></h3>
+<p id="photoViewerFileInfo" class="text-sm opacity-80"></p>
+</div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" class="modal fixed inset-0 z-50 flex items-center justify-center hidden">
+<div class="modal-content bg-white w-full max-w-md mx-4">
+<div class="p-6">
+<h3 class="text-lg font-medium google-sans mb-2">Delete forever?</h3>
+<p class="text-gray-600 mb-6">This item will be permanently deleted.</p>
+<div class="flex justify-end">
+<button id="cancelDelete" class="btn-secondary px-4 py-2 mr-2">Cancel</button>
+<button id="confirmDelete" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md google-sans font-medium">Delete</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="fixed inset-0 bg-white bg-opacity-80 z-50 flex items-center justify-center hidden">
+<div class="text-center">
+<div class="loading-spinner mx-auto mb-4"></div>
+<p id="loadingText" class="text-gray-700">Loading...</p>
+</div>
+</div>
+
+<!-- Toast Notifications -->
+<div id="toastContainer" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50"></div>
 
 <script>
-// API base URL
-const API_BASE = 'https://my-cloud-1kaj.onrender.com';
+// API Base URL
+const API_BASE_URL = 'https://my-cloud-1kaj.onrender.com';
 
-// Load files on page load
+// DOM Elements
+const photosContainer = document.getElementById('photosContainer');
+const emptyState = document.getElementById('emptyState');
+const uploadModal = document.getElementById('uploadModal');
+const photoViewerModal = document.getElementById('photoViewerModal');
+const deleteModal = document.getElementById('deleteModal');
+const loadingOverlay = document.getElementById('loadingOverlay');
+const loadingText = document.getElementById('loadingText');
+const searchInput = document.getElementById('searchInput');
+const mobileSearchInput = document.getElementById('mobileSearchInput');
+const totalFiles = document.getElementById('totalFiles');
+const totalImages = document.getElementById('totalImages');
+const totalVideos = document.getElementById('totalVideos');
+const selectionActions = document.getElementById('selectionActions');
+const selectedCount = document.getElementById('selectedCount');
+
+// Global state
+let files = [];
+let currentFile = null;
+let selectedFiles = [];
+let selectedItems = new Set();
+let isSelectionMode = false;
+
+// Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
-    loadFiles();
-
-    document.getElementById('uploadButton').addEventListener('click', uploadFiles);
-    document.getElementById('deleteButton').addEventListener('click', deleteSelected);
+fetchFiles();
+setupEventListeners();
 });
 
-// Fetch and display media files
-async function loadFiles() {
-    try {
-        const response = await fetch(API_BASE + '/files');
-        if (!response.ok) {
-            console.error('Failed to fetch files:', response.status, response.statusText);
-            return;
-        }
-        const files = await response.json();
-        displayMedia(files);
-    } catch (error) {
-        console.error('Error fetching files:', error);
-    }
+// Fetch files from API
+async function fetchFiles() {
+showLoading('Loading photos...');
+try {
+const response = await fetch(`${API_BASE_URL}/files`);
+if (!response.ok) throw new Error('Failed to fetch files');
+
+files = await response.json();
+updateStats();
+renderPhotos();
+hideLoading();
+
+if (files.length === 0) {
+showEmptyState();
+} else {
+hideEmptyState();
+}
+} catch (error) {
+console.error('Error fetching files:', error);
+showToast('Failed to load photos');
+hideLoading();
+}
 }
 
-// Display media thumbnails in grid
-function displayMedia(files) {
-    const container = document.getElementById('mediaContainer');
-    container.innerHTML = '';
-    files.forEach(file => {
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'relative border rounded overflow-hidden';
-
-        // Checkbox for selection
-        const checkboxLabel = document.createElement('label');
-        checkboxLabel.className = 'absolute top-2 left-2 z-10 bg-white bg-opacity-75 p-1 rounded';
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'media-checkbox w-5 h-5';
-        checkbox.dataset.id = file.id;
-        checkboxLabel.appendChild(checkbox);
-        itemDiv.appendChild(checkboxLabel);
-
-        // Link to full image
-        const link = document.createElement('a');
-        link.href = API_BASE + '/stream/' + file.id;
-        link.target = '_blank';
-
-        // Image thumbnail
-        const imgContainer = document.createElement('div');
-        imgContainer.className = 'w-full aspect-square';
-        const img = document.createElement('img');
-        img.src = API_BASE + '/stream/' + (file.thumbnail_id ? file.thumbnail_id : file.id);
-        img.alt = 'Media';
-        img.className = 'object-cover w-full h-full';
-        imgContainer.appendChild(img);
-        link.appendChild(imgContainer);
-
-        itemDiv.appendChild(link);
-        container.appendChild(itemDiv);
-    });
+// Update statistics
+function updateStats() {
+totalFiles.textContent = files.length;
+totalImages.textContent = files.filter(file => file.mime.startsWith('image/')).length;
+totalVideos.textContent = files.filter(file => file.mime.startsWith('video/')).length;
 }
 
-// Upload selected files
+// Render photos in masonry grid
+function renderPhotos() {
+const filteredFiles = filterFiles();
+photosContainer.innerHTML = '';
+
+if (filteredFiles.length === 0) {
+if (searchInput.value || mobileSearchInput.value) {
+photosContainer.innerHTML = `
+<div class="col-span-full text-center py-16">
+<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSIjNWY2MzY4Ij48cGF0aCBkPSJNMTUuNSAxNGgtLjc5bC0uMjgtLjI3QzE1LjQxIDEyLjU5IDE2IDExLjExIDE2IDkuNSAxNiA1LjkxIDEzLjA5IDMgOS41IDNTMyA1LjkxIDMgOS41IDUuOTEgMTYgOS41IDE2YzEuNjEgMCAzLjA5LS41OSA0LjIzLTEuNTdsLjI3LjI4di43OWw1IDQuOTlMMjAuNDkgMTlsLTQuOTktNXptLTYgMEM3LjAxIDE0IDUgMTEuOTkgNSA5LjVTNy4wMSA1IDkuNSA1IDE0IDcuMDEgMTQgOS41IDExLjk5IDE0IDkuNSAxNHoiLz48L3N2Zz4=" alt="No results" class="mx-auto mb-4" width="96" height="96">
+<h3 class="text-xl font-medium google-sans mb-2">No matching photos</h3>
+<p class="text-gray-600">Try different search terms</p>
+</div>
+`;
+} else {
+showEmptyState();
+}
+return;
+}
+
+filteredFiles.forEach(file => {
+const isImage = file.mime.startsWith('image/');
+const isVideo = file.mime.startsWith('video/');
+
+const photoItem = document.createElement('div');
+photoItem.className = 'masonry-item';
+photoItem.dataset.id = file.id;
+
+const photoInner = document.createElement('div');
+photoInner.className = 'photo-item rounded-lg overflow-hidden relative';
+photoInner.dataset.id = file.id;
+
+// Selection circle
+const selectionCircle = document.createElement('div');
+selectionCircle.className = 'selection-circle';
+selectionCircle.innerHTML = '<i class="fas fa-check"></i>';
+photoInner.appendChild(selectionCircle);
+
+if (isImage) {
+const img = document.createElement('img');
+img.src = `${API_BASE_URL}/stream/${file.id}`;
+img.alt = file.name;
+img.loading = "lazy";
+photoInner.appendChild(img);
+} else if (isVideo) {
+const img = document.createElement('img');
+// Use a video thumbnail or placeholder
+img.src = `${API_BASE_URL}/stream/${file.id}`;
+img.alt = file.name;
+img.loading = "lazy";
+photoInner.appendChild(img);
+
+// Add video indicator
+const videoIndicator = document.createElement('div');
+videoIndicator.className = 'video-indicator';
+videoIndicator.innerHTML = '<i class="fas fa-play mr-1"></i> Video';
+photoInner.appendChild(videoIndicator);
+}
+
+photoItem.appendChild(photoInner);
+photosContainer.appendChild(photoItem);
+
+// Add event listeners
+photoInner.addEventListener('click', (e) => {
+if (isSelectionMode) {
+toggleItemSelection(file.id);
+} else {
+openPhotoViewer(file);
+}
+});
+
+selectionCircle.addEventListener('click', (e) => {
+e.stopPropagation();
+if (!isSelectionMode) {
+isSelectionMode = true;
+showSelectionActions();
+}
+toggleItemSelection(file.id);
+});
+});
+}
+
+// Filter files based on search input
+function filterFiles() {
+const searchTerm = (searchInput.value || mobileSearchInput.value).toLowerCase();
+if (!searchTerm) return files;
+
+return files.filter(file => 
+file.name.toLowerCase().includes(searchTerm) || 
+file.mime.toLowerCase().includes(searchTerm)
+);
+}
+
+// Toggle item selection
+function toggleItemSelection(id) {
+const item = document.querySelector(`.photo-item[data-id="${id}"]`);
+
+if (selectedItems.has(id)) {
+selectedItems.delete(id);
+item.classList.remove('selected');
+} else {
+selectedItems.add(id);
+item.classList.add('selected');
+}
+
+updateSelectionCount();
+
+if (selectedItems.size === 0) {
+isSelectionMode = false;
+hideSelectionActions();
+}
+}
+
+// Update selection count
+function updateSelectionCount() {
+selectedCount.textContent = `${selectedItems.size} selected`;
+}
+
+// Show selection actions
+function showSelectionActions() {
+selectionActions.classList.remove('hidden');
+document.body.classList.add('pb-16');
+}
+
+// Hide selection actions
+function hideSelectionActions() {
+selectionActions.classList.add('hidden');
+document.body.classList.remove('pb-16');
+
+// Deselect all items
+document.querySelectorAll('.photo-item.selected').forEach(item => {
+item.classList.remove('selected');
+});
+
+selectedItems.clear();
+}
+
+// Open photo viewer
+function openPhotoViewer(file) {
+currentFile = file;
+
+const photoViewerContent = document.getElementById('photoViewerContent');
+photoViewerContent.innerHTML = '';
+
+document.getElementById('photoViewerFileName').textContent = file.name;
+document.getElementById('photoViewerFileInfo').textContent = `${formatFileSize(file.size)} · ${file.mime}`;
+
+if (file.mime.startsWith('image/')) {
+const img = document.createElement('img');
+img.src = `${API_BASE_URL}/stream/${file.id}`;
+img.alt = file.name;
+img.className = 'max-h-screen max-w-full object-contain';
+photoViewerContent.appendChild(img);
+} else if (file.mime.startsWith('video/')) {
+const video = document.createElement('video');
+video.controls = true;
+video.autoplay = true;
+video.className = 'max-h-screen max-w-full';
+
+const source = document.createElement('source');
+source.src = `${API_BASE_URL}/stream/${file.id}`;
+source.type = file.mime;
+
+video.appendChild(source);
+photoViewerContent.appendChild(video);
+}
+
+photoViewerModal.classList.remove('hidden');
+document.body.style.overflow = 'hidden';
+}
+
+// Close photo viewer
+function closePhotoViewer() {
+photoViewerModal.classList.add('hidden');
+document.body.style.overflow = '';
+currentFile = null;
+}
+
+// Show empty state
+function showEmptyState() {
+emptyState.classList.remove('hidden');
+photosContainer.classList.add('hidden');
+}
+
+// Hide empty state
+function hideEmptyState() {
+emptyState.classList.add('hidden');
+photosContainer.classList.remove('hidden');
+}
+
+// Open upload modal
+function openUploadModal() {
+uploadModal.classList.remove('hidden');
+document.getElementById('uploadPreview').classList.add('hidden');
+document.getElementById('fileList').innerHTML = '';
+selectedFiles = [];
+}
+
+// Close upload modal
+function closeUploadModal() {
+uploadModal.classList.add('hidden');
+document.getElementById('fileInput').value = '';
+}
+
+// Handle file selection
+function handleFileSelection(files) {
+selectedFiles = Array.from(files);
+const fileList = document.getElementById('fileList');
+fileList.innerHTML = '';
+
+if (selectedFiles.length > 0) {
+document.getElementById('uploadPreview').classList.remove('hidden');
+
+selectedFiles.forEach((file, index) => {
+const fileItem = document.createElement('div');
+fileItem.className = 'flex items-center justify-between p-3 hover:bg-gray-50';
+
+let iconClass = 'fas fa-file text-gray-400';
+if (file.type.startsWith('image/')) {
+iconClass = 'fas fa-image text-blue-500';
+} else if (file.type.startsWith('video/')) {
+iconClass = 'fas fa-video text-purple-500';
+}
+
+fileItem.innerHTML = `
+<div class="flex items-center">
+<i class="${iconClass} mr-3"></i>
+<div>
+<div class="text-sm truncate max-w-xs" title="${file.name}">${file.name}</div>
+<div class="text-xs text-gray-500">${formatFileSize(file.size)}</div>
+</div>
+</div>
+<button class="remove-file text-gray-400 hover:text-gray-600 p-1" data-index="${index}">
+<i class="fas fa-times"></i>
+</button>
+`;
+
+fileList.appendChild(fileItem);
+
+// Add event listener to remove button
+const removeBtn = fileItem.querySelector('.remove-file');
+removeBtn.addEventListener('click', () => {
+selectedFiles.splice(index, 1);
+handleFileSelection(selectedFiles);
+});
+});
+} else {
+document.getElementById('uploadPreview').classList.add('hidden');
+}
+}
+
+// Upload files
 async function uploadFiles() {
-    const fileInput = document.getElementById('fileInput');
-    const files = fileInput.files;
-    if (files.length === 0) {
-        alert('Please select files to upload.');
-        return;
-    }
-    const formData = new FormData();
-    for (let i = 0; i < files.length; i++) {
-        formData.append('files', files[i]);
-    }
-
-    try {
-        const response = await fetch(API_BASE + '/upload-multiple', {
-            method: 'POST',
-            body: formData
-        });
-        if (response.ok) {
-            alert('Files uploaded successfully.');
-            fileInput.value = null;
-            loadFiles(); // Refresh the gallery
-        } else {
-            console.error('Upload failed:', response.status, response.statusText);
-            alert('Upload failed.');
-        }
-    } catch (error) {
-        console.error('Error uploading files:', error);
-    }
+if (selectedFiles.length === 0) {
+showToast('Please select files to upload');
+return;
 }
 
-// Delete selected media files
-async function deleteSelected() {
-    const checkboxes = document.querySelectorAll('.media-checkbox:checked');
-    if (checkboxes.length === 0) {
-        alert('Please select items to delete.');
-        return;
-    }
-    const idsToDelete = Array.from(checkboxes).map(cb => cb.dataset.id);
-    try {
-        const response = await fetch(API_BASE + '/delete-multiple', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: idsToDelete })
-        });
-        if (response.ok) {
-            alert('Selected items deleted successfully.');
-            loadFiles(); // Refresh the gallery
-        } else {
-            console.error('Delete failed:', response.status, response.statusText);
-            alert('Delete failed.');
-        }
-    } catch (error) {
-        console.error('Error deleting files:', error);
-    }
+showLoading('Uploading photos...');
+
+try {
+const formData = new FormData();
+
+if (selectedFiles.length === 1) {
+// Single file upload
+formData.append('file', selectedFiles[0]);
+
+const response = await fetch(`${API_BASE_URL}/upload`, {
+method: 'POST',
+body: formData
+});
+
+if (!response.ok) throw new Error('Failed to upload file');
+
+const result = await response.json();
+showToast('Photo uploaded successfully');
+} else {
+// Multiple files upload
+selectedFiles.forEach(file => {
+formData.append('files', file);
+});
+
+const response = await fetch(`${API_BASE_URL}/upload-multiple`, {
+method: 'POST',
+body: formData
+});
+
+if (!response.ok) throw new Error('Failed to upload files');
+
+const result = await response.json();
+showToast(`${selectedFiles.length} photos uploaded`);
+}
+
+closeUploadModal();
+fetchFiles();
+} catch (error) {
+console.error('Error uploading files:', error);
+showToast('Upload failed. Please try again.');
+hideLoading();
+}
+}
+
+// Delete current file
+async function deleteCurrentFile() {
+if (!currentFile) return;
+
+showLoading('Deleting...');
+try {
+const response = await fetch(`${API_BASE_URL}/delete/${currentFile.id}`, {
+method: 'DELETE'
+});
+
+if (!response.ok) throw new Error('Failed to delete file');
+
+const result = await response.json();
+
+if (result.status === 'deleted') {
+files = files.filter(file => file.id !== currentFile.id);
+updateStats();
+renderPhotos();
+showToast('Photo deleted');
+closePhotoViewer();
+closeDeleteModal();
+} else {
+throw new Error('Failed to delete file');
+}
+} catch (error) {
+console.error('Error deleting file:', error);
+showToast('Failed to delete photo');
+} finally {
+hideLoading();
+}
+}
+
+// Delete selected files
+async function deleteSelectedFiles() {
+if (selectedItems.size === 0) return;
+
+showLoading(`Deleting ${selectedItems.size} photos...`);
+try {
+const idsToDelete = Array.from(selectedItems);
+
+const response = await fetch(`${API_BASE_URL}/delete-multiple`, {
+method: 'POST',
+headers: {
+'Content-Type': 'application/json'
+},
+body: JSON.stringify({ ids: idsToDelete })
+});
+
+if (!response.ok) throw new Error('Failed to delete files');
+
+const result = await response.json();
+
+if (result.status === 'deleted') {
+files = files.filter(file => !idsToDelete.includes(file.id));
+updateStats();
+renderPhotos();
+showToast(`${idsToDelete.length} photos deleted`);
+hideSelectionActions();
+isSelectionMode = false;
+} else {
+throw new Error('Failed to delete files');
+}
+} catch (error) {
+console.error('Error deleting files:', error);
+showToast('Failed to delete photos');
+} finally {
+hideLoading();
+}
+}
+
+// Download current file
+function downloadCurrentFile() {
+if (!currentFile) return;
+
+const link = document.createElement('a');
+link.href = `${API_BASE_URL}/stream/${currentFile.id}`;
+link.download = currentFile.name;
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+}
+
+// Download selected files
+function downloadSelectedFiles() {
+if (selectedItems.size === 0) return;
+
+const idsToDownload = Array.from(selectedItems);
+
+idsToDownload.forEach(id => {
+const file = files.find(f => f.id === id);
+if (file) {
+const link = document.createElement('a');
+link.href = `${API_BASE_URL}/stream/${file.id}`;
+link.download = file.name;
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+}
+});
+
+showToast(`Downloading ${idsToDownload.length} photos`);
+}
+
+// Format file size
+function formatFileSize(bytes) {
+if (bytes === 0) return '0 Bytes';
+
+const k = 1024;
+const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Show loading overlay
+function showLoading(text = 'Loading...') {
+loadingText.textContent = text;
+loadingOverlay.classList.remove('hidden');
+}
+
+// Hide loading overlay
+function hideLoading() {
+loadingOverlay.classList.add('hidden');
+}
+
+// Show toast notification
+function showToast(message, type = 'info') {
+const toastContainer = document.getElementById('toastContainer');
+
+const toast = document.createElement('div');
+toast.className = 'toast bg-white shadow-lg rounded-full py-2 px-4 mb-2';
+
+let bgColor = '';
+switch (type) {
+case 'success':
+bgColor = 'bg-green-50';
+break;
+case 'error':
+bgColor = 'bg-red-50';
+break;
+default:
+bgColor = '';
+}
+
+if (bgColor) toast.classList.add(bgColor);
+
+toast.textContent = message;
+toastContainer.appendChild(toast);
+
+// Auto remove after 3 seconds
+setTimeout(() => {
+if (toast.parentNode === toastContainer) {
+toastContainer.removeChild(toast);
+}
+}, 3000);
+}
+
+// Open delete confirmation modal
+function openDeleteModal() {
+deleteModal.classList.remove('hidden');
+}
+
+// Close delete confirmation modal
+function closeDeleteModal() {
+deleteModal.classList.add('hidden');
+}
+
+// Setup event listeners
+function setupEventListeners() {
+// Search
+searchInput.addEventListener('input', () => {
+mobileSearchInput.value = searchInput.value;
+renderPhotos();
+});
+
+mobileSearchInput.addEventListener('input', () => {
+searchInput.value = mobileSearchInput.value;
+renderPhotos();
+});
+
+// Refresh button
+document.getElementById('refreshBtn').addEventListener('click', fetchFiles);
+
+// Upload buttons
+document.getElementById('uploadBtn').addEventListener('click', openUploadModal);
+document.getElementById('emptyStateUploadBtn').addEventListener('click', openUploadModal);
+document.getElementById('closeUploadModal').addEventListener('click', closeUploadModal);
+document.getElementById('cancelUpload').addEventListener('click', closeUploadModal);
+document.getElementById('submitUpload').addEventListener('click', uploadFiles);
+
+// File input
+const fileInput = document.getElementById('fileInput');
+fileInput.addEventListener('change', (e) => {
+handleFileSelection(e.target.files);
+});
+
+// Photo viewer
+document.getElementById('closePhotoViewer').addEventListener('click', closePhotoViewer);
+document.getElementById('downloadCurrentPhoto').addEventListener('click', downloadCurrentFile);
+document.getElementById('deleteCurrentPhoto').addEventListener('click', openDeleteModal);
+
+// Delete confirmation
+document.getElementById('cancelDelete').addEventListener('click', closeDeleteModal);
+document.getElementById('confirmDelete').addEventListener('click', () => {
+if (currentFile) {
+deleteCurrentFile();
+} else {
+deleteSelectedFiles();
+}
+});
+
+// Selection actions
+document.getElementById('cancelSelection').addEventListener('click', () => {
+isSelectionMode = false;
+hideSelectionActions();
+});
+
+document.getElementById('downloadSelected').addEventListener('click', downloadSelectedFiles);
+document.getElementById('deleteSelected').addEventListener('click', openDeleteModal);
+
+// Drag and drop
+const uploadDropArea = document.getElementById('uploadDropArea');
+
+uploadDropArea.addEventListener('dragover', (e) => {
+e.preventDefault();
+uploadDropArea.classList.add('border-blue-500');
+});
+
+uploadDropArea.addEventListener('dragleave', () => {
+uploadDropArea.classList.remove('border-blue-500');
+});
+
+uploadDropArea.addEventListener('drop', (e) => {
+e.preventDefault();
+uploadDropArea.classList.remove('border-blue-500');
+handleFileSelection(e.dataTransfer.files);
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+if (e.key === 'Escape') {
+if (!photoViewerModal.classList.contains('hidden')) {
+closePhotoViewer();
+} else if (!uploadModal.classList.contains('hidden')) {
+closeUploadModal();
+} else if (!deleteModal.classList.contains('hidden')) {
+closeDeleteModal();
+} else if (isSelectionMode) {
+isSelectionMode = false;
+hideSelectionActions();
+}
+}
+
+// Delete key
+if (e.key === 'Delete' && isSelectionMode && selectedItems.size > 0) {
+openDeleteModal();
+}
+});
 }
 </script>
 </body>
