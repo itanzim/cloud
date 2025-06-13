@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-telethon
-python-multipart
 pillow
 moviepy
+telethon
+python-multipart

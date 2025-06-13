@@ -13,14 +13,14 @@ import tempfile
 import os
 import logging
 
-# Video thumbnail dependency
+# Video thumbnail generation
 from moviepy.editor import VideoFileClip
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Telegram credentials
+# Telegram API credentials
 api_id = 28437242
 api_hash = "25ff44a57d1be2775b5fb60278ef724b"
 string_session = os.environ.get("STRING_SESSION")
@@ -31,7 +31,7 @@ channel_entity = None
 # FastAPI app
 app = FastAPI()
 
-# CORS
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -258,7 +258,7 @@ async def stream_file(msg_id: int, request: Request):
 @app.delete("/delete/{msg_id}")
 async def delete_file(msg_id: int):
     try:
-        await client.delete_messages(channel_entity, msg_id)
+        await client.delete_messages(channel_entity, msg_id, revoke=True)
         return {"status": "deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
@@ -266,7 +266,7 @@ async def delete_file(msg_id: int):
 @app.post("/delete-multiple")
 async def delete_multiple(ids: List[int]):
     try:
-        await client.delete_messages(channel_entity, ids)
+        await client.delete_messages(channel_entity, ids, revoke=True)
         return {"status": "deleted", "count": len(ids)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Delete multiple failed: {e}")
