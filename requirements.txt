@@ -3,7 +3,6 @@ telethon
 python-multipart
 uvicorn
 python-dotenv
-mimetypes-guessing
 slowapi
 gunicorn
 httptools
