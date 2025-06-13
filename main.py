@@ -5,38 +5,45 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.types import DocumentAttributeFilename
 from typing import List
-import os
 from io import BytesIO
 from PIL import Image
+import os
 
-# Telegram credentials
+# 🔐 Telegram credentials
 api_id = 28437242
 api_hash = "25ff44a57d1be2775b5fb60278ef724b"
-string = os.environ.get("STRING_SESSION")  # should be set in Render env
-channel_id = -1002837205535
+string = os.environ.get("STRING_SESSION")  # Set this in Render env vars
 
+# 📦 Telegram client & channel entity
 client = TelegramClient(StringSession(string), api_id, api_hash)
+channel_entity = None
+
 app = FastAPI()
 
-# CORS configuration
+# 🌍 CORS for cross-origin frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Restrict in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# 🚀 On startup: connect client & resolve private channel
 @app.on_event("startup")
 async def startup_event():
+    global channel_entity
     await client.start()
-    print("✅ Telegram client started")
+    channel_entity = await client.get_entity("https://t.me/+yGEhMlthGkIxM2Rl")
+    print("✅ Telegram client started and channel resolved")
 
+# 📴 On shutdown: disconnect client
 @app.on_event("shutdown")
 async def shutdown_event():
     await client.disconnect()
     print("🔌 Telegram client disconnected")
 
+# 📤 Upload a single file
 @app.post("/upload")
 async def upload(file: UploadFile):
     data = await file.read()
@@ -53,14 +60,15 @@ async def upload(file: UploadFile):
             thumb_io.name = f"thumb_{name}"
             image.save(thumb_io, format=image.format or 'JPEG')
             thumb_io.seek(0)
-            msg_thumb = await client.send_file(channel_id, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}")
+            msg_thumb = await client.send_file(channel_entity, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}")
             thumb_id = msg_thumb.id
         except Exception as e:
             print("⚠️ Thumbnail generation failed:", e)
 
-    msg = await client.send_file(channel_id, bio, file_name=name, caption=name)
+    msg = await client.send_file(channel_entity, bio, file_name=name, caption=name)
     return {"status": "uploaded", "id": msg.id, "thumbnail_id": thumb_id}
 
+# 📤 Upload multiple files
 @app.post("/upload-multiple")
 async def upload_multiple(files: List[UploadFile] = File(...)):
     results = []
@@ -79,34 +87,29 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
                 thumb_io.name = f"thumb_{name}"
                 image.save(thumb_io, format=image.format or 'JPEG')
                 thumb_io.seek(0)
-                msg_thumb = await client.send_file(channel_id, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}")
+                msg_thumb = await client.send_file(channel_entity, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}")
                 thumb_id = msg_thumb.id
             except Exception as e:
                 print(f"⚠️ Thumbnail generation failed for {name}:", e)
 
-        msg = await client.send_file(channel_id, bio, file_name=name, caption=name)
+        msg = await client.send_file(channel_entity, bio, file_name=name, caption=name)
         results.append({"id": msg.id, "thumbnail_id": thumb_id, "name": name})
 
     return {"status": "uploaded", "files": results}
 
+# 📥 List uploaded files
 @app.get("/files")
 async def list_files():
-    try:
-        await client.connect()
-    except Exception as e:
-        print("⚠️ Connect failed:", e)
-
+    messages = await client.get_messages(channel_entity, limit=100)
     files = []
     thumb_map = {}
-    
-    # First pass: Collect all thumbnails
-    async for msg in client.iter_messages(channel_id):
+
+    for msg in messages:
         if msg.media and hasattr(msg.media, 'document') and msg.message and msg.message.startswith("thumb:"):
             original_name = msg.message.replace("thumb:", "")
             thumb_map[original_name] = msg.id
 
-    # Second pass: Collect all files
-    async for msg in client.iter_messages(channel_id):
+    for msg in messages:
         if msg.media and hasattr(msg.media, 'document') and (not msg.message or not msg.message.startswith("thumb:")):
             doc = msg.media.document
             attrs = doc.attributes
@@ -124,25 +127,28 @@ async def list_files():
 
     return JSONResponse(content=files)
 
+# ❌ Delete one file
 @app.delete("/delete/{msg_id}")
 async def delete_file(msg_id: int):
     try:
-        await client.delete_messages(channel_id, msg_id)
+        await client.delete_messages(channel_entity, msg_id)
         return {"status": "deleted"}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+# ❌ Delete multiple files
 @app.post("/delete-multiple")
 async def delete_multiple(ids: List[int]):
     try:
-        await client.delete_messages(channel_id, ids)
+        await client.delete_messages(channel_entity, ids)
         return {"status": "deleted", "count": len(ids)}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+# 📥 Stream a file
 @app.get("/stream/{msg_id}")
 async def stream_file(msg_id: int):
-    msg = await client.get_messages(channel_id, ids=msg_id)
+    msg = await client.get_messages(channel_entity, ids=msg_id)
     if not msg or not msg.media or not hasattr(msg.media, "document"):
         return JSONResponse(status_code=404, content={"error": "File not found"})
 
