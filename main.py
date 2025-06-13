@@ -18,16 +18,13 @@ logger = logging.getLogger(__name__)
 # Telegram credentials
 api_id = 28437242
 api_hash = "25ff44a57d1be2775b5fb60278ef724b"
-string_session = os.environ.get("STRING_SESSION")  # Set in environment variables
+string_session = os.environ.get("STRING_SESSION")
 
-# Initialize Telegram client
 client = TelegramClient(StringSession(string_session), api_id, api_hash)
 channel_entity = None
 
-# Initialize FastAPI app
 app = FastAPI()
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,7 +33,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Startup event: Connect client and resolve channel
 @app.on_event("startup")
 async def startup_event():
     global channel_entity
@@ -48,7 +44,6 @@ async def startup_event():
         logger.error(f"Startup error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start Telegram client: {e}")
 
-# Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
     try:
@@ -57,7 +52,6 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Shutdown error: {e}")
 
-# Upload single file
 @app.post("/upload")
 async def upload(file: UploadFile):
     try:
@@ -90,7 +84,6 @@ async def upload(file: UploadFile):
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 
-# Upload multiple files
 @app.post("/upload-multiple")
 async def upload_multiple(files: List[UploadFile] = File(...)):
     try:
@@ -127,7 +120,6 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
         logger.error(f"Multiple upload error: {e}")
         raise HTTPException(status_code=500, detail=f"Multiple upload failed: {e}")
 
-# List all media files (document, photo, video)
 @app.get("/files")
 async def list_files():
     try:
@@ -164,10 +156,12 @@ async def list_files():
                 elif hasattr(msg.media, "photo") and msg.media.photo:
                     file_type = "photo"
                     filename = msg.message or f"photo_{msg.id}.jpg"
+                    mime = "image/jpeg"
 
                 elif hasattr(msg.media, "video") and msg.media.video:
                     file_type = "video"
                     filename = msg.message or f"video_{msg.id}.mp4"
+                    mime = "video/mp4"
 
                 else:
                     continue
@@ -190,7 +184,6 @@ async def list_files():
         logger.error(f"List files error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list media: {e}")
 
-# Delete a single file
 @app.delete("/delete/{msg_id}")
 async def delete_file(msg_id: int):
     try:
@@ -201,7 +194,6 @@ async def delete_file(msg_id: int):
         logger.error(f"Delete error for ID={msg_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
 
-# Delete multiple files
 @app.post("/delete-multiple")
 async def delete_multiple(ids: List[int]):
     try:
@@ -212,7 +204,6 @@ async def delete_multiple(ids: List[int]):
         logger.error(f"Delete multiple error: {e}")
         raise HTTPException(status_code=500, detail=f"Delete multiple failed: {e}")
 
-# Stream a file
 @app.get("/stream/{msg_id}")
 async def stream_file(msg_id: int):
     try:
