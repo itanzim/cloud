@@ -5,7 +5,7 @@ from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.types import DocumentAttributeFilename
 from telethon.errors import RPCError
-from typing import List, Dict, Optional
+from typing import List, Dict
 from io import BytesIO
 import os
 import logging
@@ -31,21 +31,17 @@ CHANNEL = os.getenv("CHANNEL", "https://t.me/+yGEhMlthGkIxM2Rl")
 if not STRING_SESSION:
     raise ValueError("STRING_SESSION environment variable is required")
 
-# Thread pool for CPU-bound tasks
 executor = ThreadPoolExecutor(max_workers=4)
 
-# Initialize Telegram client
 client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
 channel_entity = None
 
-# FastAPI app
 app = FastAPI(
     title="Telegram Media API",
     description="Efficient media streaming via Telegram",
     version="1.0.0"
 )
 
-# CORS middleware with specific origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost", "https://your-domain.com"],
@@ -54,7 +50,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Extended MIME types
 mimetypes.init()
 mimetypes.add_type('video/webm', '.webm')
 mimetypes.add_type('video/quicktime', '.mov')
@@ -84,12 +79,11 @@ async def shutdown():
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        if file.size > 2 * 1024 * 1024 * 1024:  # 2GB limit
-            raise HTTPException(413, "File too large")
-            
         data = await file.read()
         if not data:
             raise HTTPException(400, "Empty file")
+        if len(data) > 2 * 1024 * 1024 * 1024:
+            raise HTTPException(413, "File too large")
 
         msg = await client.send_file(
             channel_entity,
@@ -120,23 +114,17 @@ async def list_files(limit: int = 100):
         for msg in messages:
             if not msg.media or not hasattr(msg.media, "document"):
                 continue
-                
             doc = msg.media.document
-            file_info = {
-                "id": msg.id,
-                "name": msg.message or f"file_{{msg.id}}",
- "mime_type": doc.mime_type or "application/octet-stream",
-                "size": doc.size or 0
-            }
-            
             filename = next(
-                a.file_name for a in doc.attributes 
-                if isinstance(a, DocumentAttributeFilename)
-                ) or file_info["name"]
-            file_info["name"] = filename
-            
-            files.append(file_info)
-            
+                (a.file_name for a in doc.attributes if isinstance(a, DocumentAttributeFilename)),
+                msg.message or f"file_{msg.id}"
+            )
+            files.append({
+                "id": msg.id,
+                "name": filename,
+                "mime_type": doc.mime_type or "application/octet-stream",
+                "size": doc.size or 0
+            })
         return JSONResponse(content=files)
     except RPCError as e:
         logger.error(f"List failed: {str(e)}")
@@ -146,14 +134,22 @@ async def list_files(limit: int = 100):
         raise HTTPException(500, "Failed to retrieve files")
 
 @app.get(
-    "/stream/{media_id}",
+    "/stream/{msg_id}",
     responses={
-        206: {"content": {}}, "description": "Partial content for range requests"},
-        200: {"content": {}}, "description": "Full file content"},
-    )
+        206: {
+            "content": {},
+            "description": "Partial content for range requests"
+        },
+        200: {
+            "content": {},
+            "description": "Full file content"
+        }
+    }
+)
 async def stream_file(msg_id: int, request: Request):
     try:
-        msg = await client.get_messages(channel_entity, ids_ids=[msg_id])[0]
+        msg = await client.get_messages(channel_entity, ids=msg_id)
+        msg = msg[0] if isinstance(msg, list) else msg
         if not msg or not msg.media or not hasattr(msg.media, "document"):
             raise HTTPException(404, "File not found")
 
@@ -164,71 +160,63 @@ async def stream_file(msg_id: int, request: Request):
         )
         file_size = doc.size or 0
         mime_type = doc.mime_type or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
-
-        # Parse range header
         range_header = request.headers.get("range")
+
         if range_header and file_size:
             match = re.match(r"bytes\s*=\s*(\d+)-(\d*)", range_header)
             if not match:
                 raise HTTPException(416, "Invalid range")
-                
+
             start, end = match.groups()
             start = int(start)
             end = int(end) if end else file_size - 1
-            
+
             if start >= file_size:
                 raise HTTPException(416, "Range not satisfiable")
-                
+
             content_length = min(end, file_size - 1) - start + 1
-            
+
             async def ranged_stream():
-                async for a chunk in client.iter_download(
-                    msg.media,
-                    offset=start,
-                    limit=content_length,
-                    file_size=file_size
-                ):
+                async for chunk in client.iter_download(msg.media, offset=start, limit=content_length):
                     yield chunk
 
-                    return StreamingResponse(
-                        ranged_stream(),
-                        status_code=206,
-                        headers={
-                            "Content-Range-Range": f"bytes={start}-{end}/{file_size}",
-                            "Content-Length": str(content_length)}",
- "Content-Type": "text/plain",
-                            "Accept-Ranges-Ranges": "bytes"
-                        },
-                        media_type=mime_type
-                    )
-
-        # Full file stream
-        async def full_stream():
-            async for a chunk in client.iter_download(msg.media):
-                yield chunk
-
             return StreamingResponse(
-                full_stream(),
+                ranged_stream(),
+                status_code=206,
                 headers={
-                    "Content-Type": str(mime_type)}",
-                    "Content-Length": str((file_size)} if file_size else "",
-                    "Accept-Ranges": "bytes",
-                    "Cache-Control": "public, max-age=86400"
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Content-Length": str(content_length),
+                    "Accept-Ranges": "bytes"
                 },
                 media_type=mime_type
             )
 
-        except RPCError as e:
-            logger.error(f"Stream failed: {str(e)}")
-            raise HTTPException(500, f"Stream failed: {str(e)}")
-        except Exception as e:
-            logger.error(f"Stream failed: {str(e)}")
-            raise HTTPException(500, "Internal server error")
+        async def full_stream():
+            async for chunk in client.iter_download(msg.media):
+                yield chunk
+
+        return StreamingResponse(
+            full_stream(),
+            headers={
+                "Content-Type": mime_type,
+                "Content-Length": str(file_size),
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=86400"
+            },
+            media_type=mime_type
+        )
+
+    except RPCError as e:
+        logger.error(f"Stream failed: {str(e)}")
+        raise HTTPException(500, f"Stream failed: {str(e)}")
+    except Exception as e:
+        logger.error(f"Stream failed: {str(e)}")
+        raise HTTPException(500, "Internal server error")
 
 @app.delete("/delete/{msg_id}")
 async def delete_file(msg_id: int):
     try:
-        await client.delete_messages(channel_entity, message_ids=[msg_id]) except:
+        await client.delete_messages(channel_entity, message_ids=[msg_id])
         return {"status": "deleted"}
     except RPCError as e:
         logger.error(f"Delete failed: {str(e)}")
