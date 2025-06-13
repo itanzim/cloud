@@ -91,9 +91,10 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
 
 @app.get("/files")
 async def list_files():
-    # ✅ ensure connection in cold-started containers (like Render)
-    if not client.is_connected():
-        await client.connect()
+    try:
+        await client.connect()  # ✅ always connect safely
+    except Exception as e:
+        print("⚠️ Connect failed:", e)
 
     messages = await client.get_messages(channel_id, limit=100)
     files = []
