@@ -4,272 +4,188 @@ from fastapi.middleware.cors import CORSMiddleware
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.types import DocumentAttributeFilename
-from telethon.errors import FloodWaitError, FileReferenceExpiredError
-from typing import List
+from typing import List, Optional
 from io import BytesIO
-from PIL import Image
-from starlette.responses import Response
-import tempfile
 import os
 import logging
-import imageio.v3 as iio
-import numpy as np
+import mimetypes
+from functools import partial
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Telegram API credentials
+# Configuration
 api_id = 28437242
 api_hash = "25ff44a57d1be2775b5fb60278ef724b"
 string_session = os.environ.get("STRING_SESSION")
+CHANNEL = "https://t.me/+yGEhMlthGkIxM2Rl"
 
+# Thread pool for CPU-bound tasks
+executor = ThreadPoolExecutor(max_workers=4)
+
+# Initialize Telegram client
 client = TelegramClient(StringSession(string_session), api_id, api_hash)
 channel_entity = None
 
+# FastAPI app
 app = FastAPI(
     title="Telegram Media API",
-    description="Upload, list, stream, and delete media via Telegram",
-    version="1.0.0",
+    description="Efficient media streaming via Telegram",
+    version="1.0.0"
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Extended MIME types
+mimetypes.add_type('video/webm', '.webm')
+mimetypes.add_type('video/quicktime', '.mov')
+
 @app.on_event("startup")
-async def startup_event():
+async def startup():
     global channel_entity
     try:
         await client.start()
-        channel_entity = await client.get_entity("https://t.me/+yGEhMlthGkIxM2Rl")
-        logger.info("✅ Telegram client started and channel resolved")
+        channel_entity = await client.get_entity(CHANNEL)
+        logger.info("Telegram client started")
     except Exception as e:
-        logger.error(f"Startup error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to start Telegram client: {e}")
+        logger.error(f"Startup failed: {e}")
+        raise
 
 @app.on_event("shutdown")
-async def shutdown_event():
-    try:
-        await client.disconnect()
-        logger.info("🔌 Telegram client disconnected")
-    except Exception as e:
-        logger.error(f"Shutdown error: {e}")
+async def shutdown():
+    await client.disconnect()
+    logger.info("Telegram client disconnected")
 
 @app.post("/upload")
 async def upload(file: UploadFile):
     try:
         data = await file.read()
-        name = file.filename
-        bio = BytesIO(data)
-        bio.name = name
-        thumb_id = None
-
-        # Image thumbnail only (removed video thumbnail)
-        if file.content_type.startswith("image/"):
-            try:
-                image = Image.open(BytesIO(data))
-                image.thumbnail((300, 300))
-                thumb_io = BytesIO()
-                thumb_io.name = f"thumb_{name}"
-                image.save(thumb_io, format=image.format or "JPEG")
-                thumb_io.seek(0)
-                msg_thumb = await client.send_file(
-                    channel_entity, thumb_io,
-                    file_name=thumb_io.name,
-                    caption=f"thumb:{name}"
-                )
-                thumb_id = msg_thumb.id
-            except Exception as e:
-                logger.warning(f"Image thumbnail failed for {name}: {e}")
-
-        # Send main file
         msg = await client.send_file(
-            channel_entity, bio,
-            file_name=name,
-            caption=name
+            channel_entity,
+            BytesIO(data),
+            file_name=file.filename,
+            caption=file.filename,
+            part_size_kb=512,
+            workers=4
         )
-        return {"status": "uploaded", "id": msg.id, "thumbnail_id": thumb_id}
+        return {"id": msg.id, "name": file.filename}
     except Exception as e:
         logger.error(f"Upload failed: {e}")
-        raise HTTPException(status_code=500, detail="Upload failed")
-
-@app.post("/upload-multiple")
-async def upload_multiple(files: List[UploadFile] = File(...)):
-    try:
-        results = []
-        for file in files:
-            data = await file.read()
-            name = file.filename
-            bio = BytesIO(data)
-            bio.name = name
-            thumb_id = None
-
-            if file.content_type.startswith("image/"):
-                try:
-                    image = Image.open(BytesIO(data))
-                    image.thumbnail((300, 300))
-                    thumb_io = BytesIO()
-                    thumb_io.name = f"thumb_{name}"
-                    image.save(thumb_io, format=image.format or "JPEG")
-                    thumb_io.seek(0)
-                    msg_thumb = await client.send_file(
-                        channel_entity, thumb_io,
-                        file_name=thumb_io.name,
-                        caption=f"thumb:{name}"
-                    )
-                    thumb_id = msg_thumb.id
-                except Exception as e:
-                    logger.warning(f"Image thumbnail failed for {name}: {e}")
-
-            msg = await client.send_file(
-                channel_entity, bio,
-                file_name=name,
-                caption=name
-            )
-            results.append({"id": msg.id, "thumbnail_id": thumb_id, "name": name})
-
-        return {"status": "uploaded", "files": results}
-    except Exception as e:
-        logger.error(f"Multiple upload failed: {e}")
-        raise HTTPException(status_code=500, detail="Multiple upload failed")
+        raise HTTPException(500, "Upload failed")
 
 @app.get("/files")
 async def list_files():
     try:
         messages = await client.get_messages(channel_entity, limit=100)
         files = []
-        thumb_map = {}
-
-        # Map thumbnails
+        
         for msg in messages:
-            if msg.media and hasattr(msg.media, "document") and msg.message and msg.message.startswith("thumb:"):
-                orig = msg.message.replace("thumb:", "")
-                thumb_map[orig] = msg.id
+            if not msg.media:
+                continue
+                
+            file_info = {
+                "id": msg.id,
+                "name": msg.message or f"file_{msg.id}",
+                "mime": "application/octet-stream",
+                "size": 0
+            }
 
-        # List media
-        for msg in messages:
-            if msg.media:
-                mime = None
-                size = None
-                file_type = "unknown"
-                filename = msg.message or f"file_{msg.id}"
+            if hasattr(msg.media, "document"):
+                doc = msg.media.document
+                file_info["mime"] = doc.mime_type or file_info["mime"]
+                file_info["size"] = doc.size
+                if filename := next(
+                    (a.file_name for a in doc.attributes 
+                     if isinstance(a, DocumentAttributeFilename)), None
+                ):
+                    file_info["name"] = filename
 
-                if hasattr(msg.media, "document") and msg.media.document:
-                    doc = msg.media.document
-                    mime = doc.mime_type
-                    size = doc.size
-                    filename = next(
-                        (a.file_name for a in doc.attributes if isinstance(a, DocumentAttributeFilename)),
-                        filename
-                    )
-                    file_type = "video" if mime and mime.startswith("video/") else "document"
-
-                elif hasattr(msg.media, "photo") and msg.media.photo:
-                    mime = "image/jpeg"
-                    file_type = "photo"
-
-                elif hasattr(msg.media, "video") and msg.media.video:
-                    mime = "video/mp4"
-                    file_type = "video"
-
-                if file_type != "unknown":
-                    files.append({
-                        "id": msg.id,
-                        "name": filename,
-                        "type": file_type,
-                        "mime": mime,
-                        "size": size,
-                        "thumbnail_id": thumb_map.get(filename)
-                    })
-
-        return JSONResponse(content=files)
+            files.append(file_info)
+            
+        return JSONResponse(files)
     except Exception as e:
-        logger.error(f"List files failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to list media")
+        logger.error(f"List failed: {e}")
+        raise HTTPException(500, "List failed")
 
 @app.get("/stream/{msg_id}")
 async def stream_file(msg_id: int, request: Request):
     try:
         msg = await client.get_messages(channel_entity, ids=msg_id)
         if not msg or not msg.media:
-            raise HTTPException(status_code=404, detail="File not found")
+            raise HTTPException(404, "File not found")
 
-        media = msg.media
-        mime = "application/octet-stream"
-        file_size = 0
-        
-        if hasattr(media, "document") and media.document:
-            mime = media.document.mime_type or mime
-            file_size = media.document.size
-        elif hasattr(media, "photo") and media.photo:
-            mime = "image/jpeg"
-            # For photos, we'll get the size after downloading
-        elif hasattr(media, "video") and media.video:
-            mime = "video/mp4"
-            # For videos, we'll get the size after downloading
+        # Get file info
+        file_name = msg.message or f"file_{msg.id}"
+        file_size = getattr(msg.media.document, "size", None) if hasattr(msg.media, "document") else None
+        mime = (getattr(msg.media.document, "mime_type", None) if hasattr(msg.media, "document") else None
+        mime = mime or mimetypes.guess_type(file_name)[0] or "application/octet-stream"
 
-        # Stream the file in chunks for better performance
-        async def file_generator():
-            downloaded = 0
-            async for chunk in client.iter_download(media):
-                downloaded += len(chunk)
-                yield chunk
-
+        # Range request handling
         range_header = request.headers.get("range")
-        if range_header and (hasattr(media, "document") or hasattr(media, "video")):
-            # Handle range requests for documents and videos
+        if range_header and file_size:
             start, end = range_header.replace("bytes=", "").split("-")
             start = int(start)
             end = int(end) if end else file_size - 1
             content_length = end - start + 1
             
-            headers = {
-                "Content-Range": f"bytes {start}-{end}/{file_size}",
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(content_length),
-                "Content-Type": mime,
-            }
-            
-            # Download only the requested range
-            data = b''
-            async for chunk in client.iter_download(media, offset=start, limit=content_length):
-                data += chunk
-                
-            return Response(content=data, status_code=206, headers=headers)
-        
-        # For non-range requests or files that don't support range requests
+            async def ranged_stream():
+                async for chunk in client.iter_download(
+                    msg.media,
+                    offset=start,
+                    limit=content_length,
+                    file_size=file_size
+                ):
+                    yield chunk
+
+            return StreamingResponse(
+                ranged_stream(),
+                status_code=206,
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Content-Length": str(content_length),
+                    "Content-Type": mime,
+                    "Accept-Ranges": "bytes"
+                },
+                media_type=mime
+            )
+
+        # Full file stream
+        async def full_stream():
+            async for chunk in client.iter_download(msg.media):
+                yield chunk
+
         headers = {
             "Content-Type": mime,
-            "Accept-Ranges": "bytes" if hasattr(media, "document") or hasattr(media, "video") else "none",
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=86400"
         }
-        if file_size > 0:
+        if file_size:
             headers["Content-Length"] = str(file_size)
-            
-        return StreamingResponse(file_generator(), headers=headers, media_type=mime)
+
+        return StreamingResponse(
+            full_stream(),
+            headers=headers,
+            media_type=mime
+        )
+
     except Exception as e:
         logger.error(f"Stream failed: {e}")
-        raise HTTPException(status_code=500, detail="Stream failed")
+        raise HTTPException(500, "Stream failed")
 
 @app.delete("/delete/{msg_id}")
 async def delete_file(msg_id: int):
     try:
-        await client.delete_messages(channel_entity, msg_id, revoke=True)
+        await client.delete_messages(channel_entity, msg_id)
         return {"status": "deleted"}
     except Exception as e:
         logger.error(f"Delete failed: {e}")
-        raise HTTPException(status_code=500, detail="Delete failed")
-
-@app.post("/delete-multiple")
-async def delete_multiple(ids: List[int]):
-    try:
-        await client.delete_messages(channel_entity, ids, revoke=True)
-        return {"status": "deleted", "count": len(ids)}
-    except Exception as e:
-        logger.error(f"Delete multiple failed: {e}")
-        raise HTTPException(status_code=500, detail="Delete multiple failed")
+        raise HTTPException(500, "Delete failed")

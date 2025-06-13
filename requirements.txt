@@ -1,6 +1,10 @@
 fastapi
-uvicorn
 telethon
-pillow
-aiofiles
 python-multipart
+uvicorn
+python-dotenv
+mimetypes-guessing
+slowapi
+gunicorn
+httptools
+uvloop
