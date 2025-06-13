@@ -27,10 +27,10 @@ channel_entity = None
 # Initialize FastAPI app
 app = FastAPI()
 
-# CORS middleware (restrict origins in production)
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to specific origins in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,7 +48,7 @@ async def startup_event():
         logger.error(f"Startup error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start Telegram client: {e}")
 
-# Shutdown event: Disconnect client
+# Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
     try:
@@ -57,7 +57,7 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Shutdown error: {e}")
 
-# Upload a single file
+# Upload single file
 @app.post("/upload")
 async def upload(file: UploadFile):
     try:
@@ -127,7 +127,7 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
         logger.error(f"Multiple upload error: {e}")
         raise HTTPException(status_code=500, detail=f"Multiple upload failed: {e}")
 
-# List uploaded files
+# List all media files (document, photo, video)
 @app.get("/files")
 async def list_files():
     try:
@@ -136,38 +136,59 @@ async def list_files():
         files = []
         thumb_map = {}
 
-        # Map thumbnails
         for msg in messages:
             if msg.media and hasattr(msg.media, "document") and msg.message and msg.message.startswith("thumb:"):
                 original_name = msg.message.replace("thumb:", "")
                 thumb_map[original_name] = msg.id
-                logger.debug(f"Thumbnail mapped: ID={msg.id}, Original={original_name}")
 
-        # Map files
         for msg in messages:
-            if msg.media and hasattr(msg.media, "document") and (not msg.message or not msg.message.startswith("thumb:")):
-                doc = msg.media.document
-                filename = next(
-                    (a.file_name for a in doc.attributes if isinstance(a, DocumentAttributeFilename)),
-                    msg.message or "unnamed",
-                )
+            if msg.media:
+                file_type = "unknown"
+                filename = msg.message or f"file_{msg.id}"
+                mime = None
+                size = None
+
+                if hasattr(msg.media, "document") and msg.media.document:
+                    doc = msg.media.document
+                    mime = doc.mime_type
+                    size = doc.size
+                    filename = next(
+                        (a.file_name for a in doc.attributes if isinstance(a, DocumentAttributeFilename)),
+                        msg.message or f"document_{msg.id}"
+                    )
+                    if mime and mime.startswith("video/"):
+                        file_type = "video"
+                    else:
+                        file_type = "document"
+
+                elif hasattr(msg.media, "photo") and msg.media.photo:
+                    file_type = "photo"
+                    filename = msg.message or f"photo_{msg.id}.jpg"
+
+                elif hasattr(msg.media, "video") and msg.media.video:
+                    file_type = "video"
+                    filename = msg.message or f"video_{msg.id}.mp4"
+
+                else:
+                    continue
+
                 files.append({
                     "id": msg.id,
                     "name": filename,
-                    "mime": doc.mime_type,
-                    "size": doc.size,
+                    "type": file_type,
+                    "mime": mime,
+                    "size": size,
                     "thumbnail_id": thumb_map.get(filename),
                 })
-                logger.debug(f"File added: ID={msg.id}, Name={filename}, Thumbnail={thumb_map.get(filename)}")
 
-        logger.info(f"Returning {len(files)} files")
+        logger.info(f"Returning {len(files)} media files")
         return JSONResponse(content=files)
     except FloodWaitError as e:
         logger.error(f"Rate limit hit: wait {e.seconds} seconds")
         raise HTTPException(status_code=429, detail=f"Rate limit hit, wait {e.seconds} seconds")
     except Exception as e:
         logger.error(f"List files error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list files: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list media: {e}")
 
 # Delete a single file
 @app.delete("/delete/{msg_id}")
