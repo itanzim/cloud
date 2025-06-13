@@ -18,10 +18,10 @@ channel_id = -1002837205535
 client = TelegramClient(StringSession(string), api_id, api_hash)
 app = FastAPI()
 
-# ✅ CORS for frontend access
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Use specific domain in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -92,20 +92,21 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
 @app.get("/files")
 async def list_files():
     try:
-        await client.connect()  # ✅ always connect safely
+        await client.connect()
     except Exception as e:
         print("⚠️ Connect failed:", e)
 
-    messages = await client.get_messages(channel_id, limit=100)
     files = []
     thumb_map = {}
-
-    for msg in messages:
+    
+    # First pass: Collect all thumbnails
+    async for msg in client.iter_messages(channel_id):
         if msg.media and hasattr(msg.media, 'document') and msg.message and msg.message.startswith("thumb:"):
             original_name = msg.message.replace("thumb:", "")
             thumb_map[original_name] = msg.id
 
-    for msg in messages:
+    # Second pass: Collect all files
+    async for msg in client.iter_messages(channel_id):
         if msg.media and hasattr(msg.media, 'document') and (not msg.message or not msg.message.startswith("thumb:")):
             doc = msg.media.document
             attrs = doc.attributes
