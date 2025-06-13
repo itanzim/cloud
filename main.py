@@ -208,10 +208,10 @@ async def delete_multiple(ids: List[int]):
 async def stream_file(msg_id: int):
     try:
         msg = await client.get_messages(channel_entity, ids=msg_id)
-        if not msg or not msg[0].media or not hasattr(msg[0].media, "document"):
+        if not msg or not msg.media or not hasattr(msg.media, "document"):
             logger.error(f"No valid media for msg_id: {msg_id}")
             raise HTTPException(status_code=404, detail="File not found")
-        doc = msg[0].media.document
+        doc = msg.media.document
         file = await client.download_media(doc, file=BytesIO())
         file.seek(0)
         logger.info(f"Streaming file: ID={msg_id}, MIME={doc.mime_type}")
