@@ -2,7 +2,5 @@ fastapi
 uvicorn
 telethon
 pillow
-imageio
-imageio-ffmpeg
+aiofiles
 python-multipart
-imageio[pyav]
