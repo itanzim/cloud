@@ -299,6 +299,5 @@ async def delete_multiple(ids: List[int]):
     except Exception as e:
         logger.error(f"Delete multiple failed: {e}")
         raise HTTPException(status_code=500, detail="Delete multiple failed")
-```
 
 This covers **all endpoints** with image and video thumbnail generation using `imageio`. You can copy-paste this into your `main.py`. Let me know if you need further tweaks!
