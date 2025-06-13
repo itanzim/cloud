@@ -1,77 +1,215 @@
-import os
-import asyncio
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.tl.types import InputMessagesFilterDocument, InputMessagesFilterPhotos
+from telethon.tl.types import DocumentAttributeFilename
+from telethon.errors import FloodWaitError, FileReferenceExpiredError
+from typing import List
+from io import BytesIO
+from PIL import Image
+import os
+import logging
 
-# 🔐 Telegram credentials
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Telegram credentials
 api_id = 28437242
 api_hash = "25ff44a57d1be2775b5fb60278ef724b"
-string = os.environ.get("STRING_SESSION")  # Make sure this is set
-channel = 'https://t.me/+yGEhMlthGkIxM2Rl'  # your private channel invite link
+string_session = os.environ.get("STRING_SESSION")  # Set in environment variables
 
-client = TelegramClient(StringSession(string), api_id, api_hash)
+# Initialize Telegram client
+client = TelegramClient(StringSession(string_session), api_id, api_hash)
+channel_entity = None
 
+# Initialize FastAPI app
+app = FastAPI()
 
-async def method1():
-    """1. iter_messages, no filter"""
-    files = []
-    async for msg in client.iter_messages(channel, limit=20):
-        if msg.media:
-            path = await msg.download_media()
-            files.append(path)
-    return files
+# CORS middleware (restrict origins in production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to specific origins in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
+# Startup event: Connect client and resolve channel
+@app.on_event("startup")
+async def startup_event():
+    global channel_entity
+    try:
+        await client.start()
+        channel_entity = await client.get_entity("https://t.me/+yGEhMlthGkIxM2Rl")
+        logger.info("✅ Telegram client started and channel resolved")
+    except Exception as e:
+        logger.error(f"Startup error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start Telegram client: {e}")
 
-async def method2():
-    """2. get_messages, no filter"""
-    files = []
-    msgs = await client.get_messages(channel, limit=20)
-    for msg in msgs:
-        if msg.media:
-            path = await msg.download_media()
-            files.append(path)
-    return files
+# Shutdown event: Disconnect client
+@app.on_event("shutdown")
+async def shutdown_event():
+    try:
+        await client.disconnect()
+        logger.info("🔌 Telegram client disconnected")
+    except Exception as e:
+        logger.error(f"Shutdown error: {e}")
 
+# Upload a single file
+@app.post("/upload")
+async def upload(file: UploadFile):
+    try:
+        data = await file.read()
+        name = file.filename
+        bio = BytesIO(data)
+        bio.name = name
 
-async def method3():
-    """3. iter_messages with Document filter"""
-    files = []
-    async for msg in client.iter_messages(channel, filter=InputMessagesFilterDocument, limit=20):
-        if msg.media:
-            path = await msg.download_media()
-            files.append(path)
-    return files
+        thumb_id = None
+        if file.content_type.startswith("image/"):
+            try:
+                image = Image.open(BytesIO(data))
+                image.thumbnail((300, 300))
+                thumb_io = BytesIO()
+                thumb_io.name = f"thumb_{name}"
+                image.save(thumb_io, format=image.format or "JPEG")
+                thumb_io.seek(0)
+                msg_thumb = await client.send_file(
+                    channel_entity, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}"
+                )
+                thumb_id = msg_thumb.id
+                logger.info(f"Uploaded thumbnail: ID={msg_thumb.id}, Name={thumb_io.name}")
+            except Exception as e:
+                logger.warning(f"Thumbnail generation failed for {name}: {e}")
 
+        msg = await client.send_file(channel_entity, bio, file_name=name, caption=name)
+        logger.info(f"Uploaded file: ID={msg.id}, Name={name}")
+        return {"status": "uploaded", "id": msg.id, "thumbnail_id": thumb_id}
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 
-async def method4():
-    """4. iter_messages with Photos filter"""
-    files = []
-    async for msg in client.iter_messages(channel, filter=InputMessagesFilterPhotos, limit=20):
-        if msg.media:
-            path = await msg.download_media()
-            files.append(path)
-    return files
+# Upload multiple files
+@app.post("/upload-multiple")
+async def upload_multiple(files: List[UploadFile] = File(...)):
+    try:
+        results = []
+        for file in files:
+            data = await file.read()
+            name = file.filename
+            bio = BytesIO(data)
+            bio.name = name
+            thumb_id = None
 
+            if file.content_type.startswith("image/"):
+                try:
+                    image = Image.open(BytesIO(data))
+                    image.thumbnail((300, 300))
+                    thumb_io = BytesIO()
+                    thumb_io.name = f"thumb_{name}"
+                    image.save(thumb_io, format=image.format or "JPEG")
+                    thumb_io.seek(0)
+                    msg_thumb = await client.send_file(
+                        channel_entity, thumb_io, file_name=thumb_io.name, caption=f"thumb:{name}"
+                    )
+                    thumb_id = msg_thumb.id
+                    logger.info(f"Uploaded thumbnail: ID={msg_thumb.id}, Name={thumb_io.name}")
+                except Exception as e:
+                    logger.warning(f"Thumbnail generation failed for {name}: {e}")
 
-async def main():
-    await client.start()
+            msg = await client.send_file(channel_entity, bio, file_name=name, caption=name)
+            logger.info(f"Uploaded file: ID={msg.id}, Name={name}")
+            results.append({"id": msg.id, "thumbnail_id": thumb_id, "name": name})
 
-    methods = [method1, method2, method3, method4]
-    for i, method in enumerate(methods, start=1):
-        try:
-            files = await method()
-            if files:
-                print(f"\nMethod {i}: ✅ Success - Downloaded {len(files)} file(s)")
-                for f in files:
-                    print(f"  → {f}")
-            else:
-                print(f"\nMethod {i}: ⚠️ No media found")
-        except Exception as e:
-            print(f"\nMethod {i}: ❌ Failed ({e})")
+        return {"status": "uploaded", "files": results}
+    except Exception as e:
+        logger.error(f"Multiple upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Multiple upload failed: {e}")
 
-    await client.disconnect()
+# List uploaded files
+@app.get("/files")
+async def list_files():
+    try:
+        messages = await client.get_messages(channel_entity, limit=100)
+        logger.info(f"Fetched {len(messages)} messages")
+        files = []
+        thumb_map = {}
 
+        # Map thumbnails
+        for msg in messages:
+            if msg.media and hasattr(msg.media, "document") and msg.message and msg.message.startswith("thumb:"):
+                original_name = msg.message.replace("thumb:", "")
+                thumb_map[original_name] = msg.id
+                logger.debug(f"Thumbnail mapped: ID={msg.id}, Original={original_name}")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+        # Map files
+        for msg in messages:
+            if msg.media and hasattr(msg.media, "document") and (not msg.message or not msg.message.startswith("thumb:")):
+                doc = msg.media.document
+                filename = next(
+                    (a.file_name for a in doc.attributes if isinstance(a, DocumentAttributeFilename)),
+                    msg.message or "unnamed",
+                )
+                files.append({
+                    "id": msg.id,
+                    "name": filename,
+                    "mime": doc.mime_type,
+                    "size": doc.size,
+                    "thumbnail_id": thumb_map.get(filename),
+                })
+                logger.debug(f"File added: ID={msg.id}, Name={filename}, Thumbnail={thumb_map.get(filename)}")
+
+        logger.info(f"Returning {len(files)} files")
+        return JSONResponse(content=files)
+    except FloodWaitError as e:
+        logger.error(f"Rate limit hit: wait {e.seconds} seconds")
+        raise HTTPException(status_code=429, detail=f"Rate limit hit, wait {e.seconds} seconds")
+    except Exception as e:
+        logger.error(f"List files error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list files: {e}")
+
+# Delete a single file
+@app.delete("/delete/{msg_id}")
+async def delete_file(msg_id: int):
+    try:
+        await client.delete_messages(channel_entity, msg_id)
+        logger.info(f"Deleted file: ID={msg_id}")
+        return {"status": "deleted"}
+    except Exception as e:
+        logger.error(f"Delete error for ID={msg_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
+
+# Delete multiple files
+@app.post("/delete-multiple")
+async def delete_multiple(ids: List[int]):
+    try:
+        await client.delete_messages(channel_entity, ids)
+        logger.info(f"Deleted {len(ids)} files")
+        return {"status": "deleted", "count": len(ids)}
+    except Exception as e:
+        logger.error(f"Delete multiple error: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete multiple failed: {e}")
+
+# Stream a file
+@app.get("/stream/{msg_id}")
+async def stream_file(msg_id: int):
+    try:
+        msg = await client.get_messages(channel_entity, ids=msg_id)
+        if not msg or not msg[0].media or not hasattr(msg[0].media, "document"):
+            logger.error(f"No valid media for msg_id: {msg_id}")
+            raise HTTPException(status_code=404, detail="File not found")
+        doc = msg[0].media.document
+        file = await client.download_media(doc, file=BytesIO())
+        file.seek(0)
+        logger.info(f"Streaming file: ID={msg_id}, MIME={doc.mime_type}")
+        return StreamingResponse(file, media_type=doc.mime_type)
+    except FloodWaitError as e:
+        logger.error(f"Rate limit hit for msg_id {msg_id}: wait {e.seconds} seconds")
+        raise HTTPException(status_code=429, detail=f"Rate limit hit, wait {e.seconds} seconds")
+    except FileReferenceExpiredError:
+        logger.error(f"File reference expired for msg_id: {msg_id}")
+        raise HTTPException(status_code=410, detail="File reference expired")
+    except Exception as e:
+        logger.error(f"Stream error for msg_id {msg_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Stream failed: {e}")
