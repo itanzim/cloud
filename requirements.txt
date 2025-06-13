@@ -5,3 +5,4 @@ pillow
 imageio
 imageio-ffmpeg
 python-multipart
+imageio[pyav]
