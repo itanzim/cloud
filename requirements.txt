@@ -3,3 +3,4 @@ uvicorn
 telethon
 python-multipart
 pillow
+moviepy
