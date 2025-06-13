@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-pillow
-moviepy
 telethon
+pillow
+imageio
+imageio-ffmpeg
 python-multipart
