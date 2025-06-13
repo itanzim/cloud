@@ -11,20 +11,23 @@ from PIL import Image
 import os
 import logging
 
-# Configure logging
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Telegram credentials
+# Telegram API credentials
 api_id = 28437242
 api_hash = "25ff44a57d1be2775b5fb60278ef724b"
 string_session = os.environ.get("STRING_SESSION")
 
+# Init Telegram client
 client = TelegramClient(StringSession(string_session), api_id, api_hash)
 channel_entity = None
 
+# Init FastAPI
 app = FastAPI()
 
+# CORS setup
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -33,6 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Start Telegram client and resolve channel
 @app.on_event("startup")
 async def startup_event():
     global channel_entity
@@ -44,6 +48,7 @@ async def startup_event():
         logger.error(f"Startup error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to start Telegram client: {e}")
 
+# Disconnect Telegram client on shutdown
 @app.on_event("shutdown")
 async def shutdown_event():
     try:
@@ -52,6 +57,7 @@ async def shutdown_event():
     except Exception as e:
         logger.error(f"Shutdown error: {e}")
 
+# Upload one file
 @app.post("/upload")
 async def upload(file: UploadFile):
     try:
@@ -84,6 +90,7 @@ async def upload(file: UploadFile):
         logger.error(f"Upload error: {e}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {e}")
 
+# Upload multiple files
 @app.post("/upload-multiple")
 async def upload_multiple(files: List[UploadFile] = File(...)):
     try:
@@ -120,6 +127,7 @@ async def upload_multiple(files: List[UploadFile] = File(...)):
         logger.error(f"Multiple upload error: {e}")
         raise HTTPException(status_code=500, detail=f"Multiple upload failed: {e}")
 
+# List files (photos, videos, documents)
 @app.get("/files")
 async def list_files():
     try:
@@ -128,11 +136,13 @@ async def list_files():
         files = []
         thumb_map = {}
 
+        # Map thumbnails
         for msg in messages:
             if msg.media and hasattr(msg.media, "document") and msg.message and msg.message.startswith("thumb:"):
                 original_name = msg.message.replace("thumb:", "")
                 thumb_map[original_name] = msg.id
 
+        # Map files
         for msg in messages:
             if msg.media:
                 file_type = "unknown"
@@ -148,10 +158,7 @@ async def list_files():
                         (a.file_name for a in doc.attributes if isinstance(a, DocumentAttributeFilename)),
                         msg.message or f"document_{msg.id}"
                     )
-                    if mime and mime.startswith("video/"):
-                        file_type = "video"
-                    else:
-                        file_type = "document"
+                    file_type = "video" if mime and mime.startswith("video/") else "document"
 
                 elif hasattr(msg.media, "photo") and msg.media.photo:
                     file_type = "photo"
@@ -175,7 +182,6 @@ async def list_files():
                     "thumbnail_id": thumb_map.get(filename),
                 })
 
-        logger.info(f"Returning {len(files)} media files")
         return JSONResponse(content=files)
     except FloodWaitError as e:
         logger.error(f"Rate limit hit: wait {e.seconds} seconds")
@@ -184,6 +190,7 @@ async def list_files():
         logger.error(f"List files error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list media: {e}")
 
+# Delete one file
 @app.delete("/delete/{msg_id}")
 async def delete_file(msg_id: int):
     try:
@@ -194,6 +201,7 @@ async def delete_file(msg_id: int):
         logger.error(f"Delete error for ID={msg_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
 
+# Delete multiple files
 @app.post("/delete-multiple")
 async def delete_multiple(ids: List[int]):
     try:
@@ -204,23 +212,36 @@ async def delete_multiple(ids: List[int]):
         logger.error(f"Delete multiple error: {e}")
         raise HTTPException(status_code=500, detail=f"Delete multiple failed: {e}")
 
+# Stream files (photo, video, document)
 @app.get("/stream/{msg_id}")
 async def stream_file(msg_id: int):
     try:
         msg = await client.get_messages(channel_entity, ids=msg_id)
-        if not msg or not msg.media or not hasattr(msg.media, "document"):
-            logger.error(f"No valid media for msg_id: {msg_id}")
+        if not msg or not msg.media:
+            logger.error(f"No media found for msg_id: {msg_id}")
             raise HTTPException(status_code=404, detail="File not found")
-        doc = msg.media.document
-        file = await client.download_media(doc, file=BytesIO())
+
+        media = msg.media
+        mime = "application/octet-stream"
+
+        if hasattr(media, "document") and media.document:
+            mime = media.document.mime_type or mime
+        elif hasattr(media, "photo") and media.photo:
+            mime = "image/jpeg"
+        elif hasattr(media, "video") and media.video:
+            mime = "video/mp4"
+
+        file = await client.download_media(media, file=BytesIO())
         file.seek(0)
-        logger.info(f"Streaming file: ID={msg_id}, MIME={doc.mime_type}")
-        return StreamingResponse(file, media_type=doc.mime_type)
+
+        logger.info(f"Streaming msg_id={msg_id} as {mime}")
+        return StreamingResponse(file, media_type=mime)
+
     except FloodWaitError as e:
-        logger.error(f"Rate limit hit for msg_id {msg_id}: wait {e.seconds} seconds")
-        raise HTTPException(status_code=429, detail=f"Rate limit hit, wait {e.seconds} seconds")
+        logger.error(f"Flood wait: wait {e.seconds}s")
+        raise HTTPException(status_code=429, detail=f"Rate limit, wait {e.seconds}s")
     except FileReferenceExpiredError:
-        logger.error(f"File reference expired for msg_id: {msg_id}")
+        logger.error(f"File reference expired for {msg_id}")
         raise HTTPException(status_code=410, detail="File reference expired")
     except Exception as e:
         logger.error(f"Stream error for msg_id {msg_id}: {e}")
